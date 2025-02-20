@@ -57,25 +57,37 @@ async function graphFromPipeline(pipeline, depth, getDataFromCID) {
       let toId = connection.to;
 
       // // For this version we're only graphing the top-level nodes and links; truncate deeper structure
-      console.log(`fromId initial: ${fromId}`)
+      // console.log(`fromId initial: ${fromId}`)
       const fromSplit = fromId.split('.');
-      console.log(`From split: `)
-      console.log(fromSplit);
+      // console.log(`From split: `)
+      // console.log(fromSplit);
       fromId = fromSplit.slice(0,3).join('.');
-      console.log(`Joined: ${fromId}`)
-      const toSplit = toId.split('.');
-      toId = toSplit.slice(0,3).join('.');
+      // console.log(`Joined: ${fromId}`)
+      // const toSplit = toId.split('.');
+      // toId = toSplit.slice(0,3).join('.');
+
+      console.log(`toId: ${JSON.stringify(toId)}`)
+      const toIDs = toId.reduce((prev, thisID) => {
+        const toSplit = thisID.split('.');
+        prev.push( toSplit.slice(0,3).join('.') );
+        return prev;
+      }, []);
+
+      console.log(`toIDs: ${JSON.stringify(toIDs)}`)
       
       const label = connection.name || 'Connection';
   
-      links.push({
-        source: fromId,
-        target: toId,
-        label: label,
-        id: `${pipeline.id}.connections.${connection.id}`,
-        points: [], // Initialize the points array
-        index: getLinkIndex(fromId, toId, links) // Ensure a unique index for this link
-      });
+      for (let i=0; i<toIDs.length; i++){
+        console.log(`i is ${i}, target ${toIDs[i]}`)
+        links.push({
+          source: fromId,
+          target: toIDs[i],
+          label: label,
+          id: `${pipeline.id}.connections.${connection.id}`,
+          points: [], // Initialize the points array
+          index: getLinkIndex(fromId, toId, links) // Ensure a unique index for this link
+        });
+      }
     });
   
     return { nodes, links };

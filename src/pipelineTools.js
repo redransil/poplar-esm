@@ -15,7 +15,7 @@ async function makePipelineObject ( {pipelineInfo, baseObject, increment, branch
     const { defaultAuthor = { id: null, method: null }, 
         defaultLicense = "" } = nodeParams;
     if (!branch) { branch = "main" };
-    if(!increment) { increment = 'major' };
+    if(!increment) { increment = 'none' };
     if(!previous) { previous = [] };
 
     // Make a default object with the same structure as a dataObject
@@ -67,7 +67,7 @@ async function makePipelineObject ( {pipelineInfo, baseObject, increment, branch
     // Verify that specific fields have the correct values
     const verifiedFields = {
         version : finalVersionObject,
-        id: generateID('pl', defaultPlusBasePlusDataInfo.name, []),
+        id: baseObject?.id?? generateID('pl', defaultPlusBasePlusDataInfo.name, []),
         time_created: Date.now(),
         msg_type:  "pipeline",
         protocol: "poplar",
@@ -157,19 +157,50 @@ async function addPort ({ pipeline, path, id_suffix, name, type, store }, nodePa
 }
 
 // Adds a new connection, or overwrites an existing one
+// from is a string, to is an array
 async function addConnection ({ pipeline, from, to, name, data, 
     clearOrphanedInputsAndOutputs, existingConnection }, nodeParams = {}) {
 
-    console.log(`Adding connection from: ${from}`)
+    // If existing connection is an id, get its data
+    if (typeof existingConnection === 'string'){
+        const returnedData = await getComponent({ 
+            pipeline, 
+            path: pipeline.id + '.connections.' + existingConnection});
+        existingConnection = returnedData.data;
+    }
+
+    console.log('Existing connection:')
+    console.log(existingConnection)
+
+    
     // Set up variables for adding the connection
     if (existingConnection){
-        if (!from && existingConnection.from) {from = existingConnection.from};
-        if (!to && existingConnection.to) {to = existingConnection.to};
+        if (!from && existingConnection.from) {from = existingConnection.from}; // String
+        if (!to && existingConnection.to) {to = existingConnection.to}; // Array
+        if ( to && existingConnection.to ) { 
+            // Add existing connections unless they are duplicates,
+            // Or if they are a top-level global output and we have another output
+            existingConnection.to.forEach((existTo) => {
+                // Don't add if this is a top-level global output and to has at least one connection
+                const existToSplit = existTo.split('.');
+                if ( ! ( existToSplit[0] === pipeline.id 
+                        && existToSplit[1] === 'outputs'
+                        && existToSplit[2].includes('_globalOutputs'))
+                        && to.length > 0
+                        && existingConnection.to.length == 1
+                 ) {
+                    if (! to.includes(existTo) ) { to.push(existTo) };
+                 }
+            });
+        };
         if (!name && existingConnection.name) {name = existingConnection.name};
         if (!name) {name = ''};
         if (!data && existingConnection.data) {data = existingConnection.data};
     }
     console.log(`Adding connection from: ${from}`)
+
+    console.log('To argument:')
+    console.log(to)
 
     // Set up variables for the new connection
     const newConnectionArg = {from, to, name, data,
@@ -182,71 +213,103 @@ async function addConnection ({ pipeline, from, to, name, data,
     console.log(newConnectionArg)
 
     const fromSplit = newConnectionArg.from.split('.');
-    const toSplit = newConnectionArg.to.split('.');
     let toReturn = JSON.parse(JSON.stringify(pipeline));
+    console.log('init toReturn:')
+    console.log(toReturn)
     const getDataFromCID = nodeParams.getDataFromCID || null;
 
-    // Check that both ports are in the pipeline
+    // Check that all ports are in the pipeline
     const fromPortReturn = await getComponent({ pipeline, path: newConnectionArg.from, getDataFromCID });
     const fromPort = fromPortReturn.data;
-    const toPortReturn = await getComponent({ pipeline, path: newConnectionArg.to, getDataFromCID });
-    const toPort = toPortReturn.data;
     if (!fromPort) { throw new Error('From port not found'); }
-    if (!toPort) { throw new Error('To port not found'); } 
+    for (let i = 0; i<newConnectionArg.to.length; i++){
+        console.log(`i is ${i}`)
+        console.log(`newConnectionArg.to is ${JSON.stringify(newConnectionArg.to)}`)
+        const toPortReturn = await getComponent({ pipeline, path: newConnectionArg.to[i], getDataFromCID });
+        const toPort = toPortReturn.data;
+        if (!toPort) { throw new Error('To port not found'); }  
+    }
 
-    // If both from and to are in the base pipeline
-    // if (fromSplit.length === 3 && toSplit.length === 3) {
+    // Track connections we are deleting
+    let deletedConnections = toReturn.connections.filter(elem => elem.id === newConnectionArg.id);
 
-        // Track connections we are deleting
-        let deletedConnections = toReturn.connections.filter(elem => elem.id === newConnectionArg.id);
+    console.log('filtered connections to delete toReturn:')
+    console.log(toReturn)
 
-        // If there is an existing connection provided, we are replacing it because
-        // the old and new connections can't have the same id
-        toReturn.connections = toReturn.connections.filter(elem => elem.id !== newConnectionArg.id);
+    // If there is an existing connection provided, we are replacing it because
+    // the old and new connections can't have the same id
+    toReturn.connections = toReturn.connections.filter(elem => elem.id !== newConnectionArg.id);
 
-        // We've checked for the existence of from and to ports, checked that the
-        // ports are in the base pipeline or global inputs/outputs for a box,
-        // and removed old connections. Now add the new one
-        toReturn.connections.push(newConnectionArg);
+    console.log('filtered toReturn removing duplicate connection:')
+    console.log(toReturn)
 
-        // If clearOrphanedInputsAndOutputs then check deleted connections for orphaned ports
-        console.log('deleted connections:')
-        console.log(deletedConnections)
-        if (clearOrphanedInputsAndOutputs) {
-            deletedConnections.forEach( elem => {
-                const nodesWithDeletedConnections = [elem.from, elem.to];
-                console.log('nodes with deleted connections:')
-                console.log(nodesWithDeletedConnections)
-                nodesWithDeletedConnections.forEach ( nodePath => {
-                    const nodePathSplit = nodePath.split('.');
-                    const nodePathId = nodePathSplit[nodePathSplit.length-1]
-                    const isOrphan = getNodeConnectivity({pipeline: toReturn, nodeID: nodePathId}).isOrphan;
-                    if (isOrphan && nodePathSplit[1] === 'inputs' ){
-                        console.log(`deleting input ${nodePathId}`)
-                        toReturn.inputs = toReturn.inputs.filter(node => node.id !== nodePathId);
-                    }
-                    if (isOrphan && nodePathSplit[1] === 'outputs' ){
-                        console.log(`deleting output ${nodePathId}`)
-                        toReturn.outputs = toReturn.outputs.filter(node => node.id !== nodePathId);
-                    }
-                })
-            });
+    // We've checked for the existence of from and to ports, checked that the
+    // ports are in the base pipeline or global inputs/outputs for a box,
+    // and removed old connections. Now add the new one
+    toReturn.connections.push(newConnectionArg);
+
+    console.log('with new connection toReturn:')
+    console.log(toReturn)
+
+    // If clearOrphanedInputsAndOutputs then check deleted connections for orphaned ports
+    console.log('deleted connections:')
+    console.log(deletedConnections)
+    if (clearOrphanedInputsAndOutputs) {
+        deletedConnections.forEach( elem => {
+            // const nodesWithDeletedConnections = [elem.from, elem.to];
+            const nodesWithDeletedConnections = elem.to.reduce( (prev, toPort) => {
+                prev.push(toPort);
+                return prev;
+            }, [elem.from]);
+            console.log('nodes with deleted connections:')
+            console.log(nodesWithDeletedConnections)
+            nodesWithDeletedConnections.forEach ( nodePath => {
+                const nodePathSplit = nodePath.split('.');
+                const nodePathId = nodePathSplit[nodePathSplit.length-1];
+                const nodeConnectivity = getNodeConnectivity({pipeline: toReturn, nodeID: nodePathId});
+                console.log(nodeConnectivity);
+                const isOrphan = nodeConnectivity.isOrphan;
+                if (isOrphan && nodePathSplit[1] === 'inputs' ){
+                    console.log(`deleting input ${nodePathId}`)
+                    toReturn.inputs = toReturn.inputs.filter(node => node.id !== nodePathId);
+                }
+                if (isOrphan && nodePathSplit[1] === 'outputs' ){
+                    console.log(`deleting output ${nodePathId}`)
+                    toReturn.outputs = toReturn.outputs.filter(node => node.id !== nodePathId);
+                }
+            })
+        });
         }
     
     // Return the pipeline with the new connection
+    console.log('actually returning toReturn:')
+    console.log(toReturn)
     return toReturn;
 
 }
 
-// Checks whether a node has any connections going to or from it in the top-level pipeline
+// Returns connections going to or from a node (ie box) in the top-level pipeline
 function getNodeConnectivity ({pipeline, nodeID}){
     let connectionsTo = [];
     let connectionsFrom = [];
     let isOrphan = false;
 
+    console.log(`Getting connectivity for ${nodeID}`)
+
+    console.log('Pipeline connections:')
+    console.log(pipeline.connections)
+
     connectionsTo = pipeline.connections.filter(connection =>  {
-        const connectionToSplit = connection.to.split('.');
-        return connectionToSplit.pop() === nodeID});
+        const connectionToIDs = connection.to.reduce( (prev, path) => {
+            const pathSplit = path.split('.');
+            prev.push(pathSplit[pathSplit.length -1]);
+            return prev;
+        }, []);
+        console.log(`Connection to ids: ${JSON.stringify(connectionToIDs)}`);
+        // const connectionToSplit = connection.to.split('.');
+        // return connectionToSplit.pop() === nodeID;
+        return connectionToIDs.includes(nodeID);
+    });
     connectionsFrom = pipeline.connections.filter(connection =>  {
         const connectionFromSplit = connection.from.split('.');
         return connectionFromSplit.pop() === nodeID});

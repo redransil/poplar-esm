@@ -3,7 +3,7 @@ import fs from 'fs';
 
 function updateVersion({ version, increment, branch, previous } ) {
 
-    if (!increment) { increment = 'major' };
+    if (!increment ) { increment = 'none' };
     if (!branch) { branch = 'main' };
     if (!previous) { previous = [] };  
     if (!version) { version = {} };
@@ -25,8 +25,10 @@ function updateVersion({ version, increment, branch, previous } ) {
       case 'patch':
         version.patch += 1;
         break;
+      case 'none':
+          break;
       default:
-        throw new Error('Invalid increment. Must be "major", "minor", or "patch".');
+        throw new Error('Invalid increment. Must be "major", "minor", "patch", or "none".');
     }
   
     // Update the branch if branch is provided

@@ -7,12 +7,34 @@ function replaceFields(previousVersion, newInfo) {
     let newVersion = JSON.parse(JSON.stringify(previousVersion));
   
     // Recursive function to update the fields
+    // function recursiveReplace(prevObj, newObj) {
+    //   for (const key in newObj) {
+    //     if (newObj.hasOwnProperty(key)) {
+    //       // If the value is an object and the key exists in both objects, recurse
+    //       if (typeof newObj[key] === 'object' && newObj[key] !== null && prevObj.hasOwnProperty(key)) {
+    //         recursiveReplace(prevObj[key], newObj[key]);
+    //       } else {
+    //         // Otherwise, replace the value
+    //         prevObj[key] = newObj[key];
+    //       }
+    //     }
+    //   }
+    // }
+
     function recursiveReplace(prevObj, newObj) {
       for (const key in newObj) {
         if (newObj.hasOwnProperty(key)) {
-          // If the value is an object and the key exists in both objects, recurse
+          // If the value is an object or array and the key exists in both objects, recurse
           if (typeof newObj[key] === 'object' && newObj[key] !== null && prevObj.hasOwnProperty(key)) {
-            recursiveReplace(prevObj[key], newObj[key]);
+            if (Array.isArray(newObj[key])) {
+              // If it's an array, deep copy the array
+              prevObj[key] = newObj[key].map(item => 
+                typeof item === 'object' && item !== null ? JSON.parse(JSON.stringify(item)) : item
+              );
+            } else {
+              // Otherwise, continue recursion
+              recursiveReplace(prevObj[key], newObj[key]);
+            }
           } else {
             // Otherwise, replace the value
             prevObj[key] = newObj[key];
@@ -20,6 +42,7 @@ function replaceFields(previousVersion, newInfo) {
         }
       }
     }
+    
   
     // Perform the replacement
     recursiveReplace(newVersion, newInfo);
@@ -88,6 +111,9 @@ function generateID(prefix, name, domain) {
 // Returns the component (or array) if it is retrievable, otherwise returns null
 // If a getDataFromCID function is supplied, uses it to retrieve components from CIDs
 async function getComponent({ pipeline, path, getDataFromCID, returnCID = false }) {
+  if (!pipeline || !path) {
+      return {data: {}, cid: null};
+  }
   const elems = path.split('.');
 
   // If returnCID is true, return the CID with the component
@@ -102,6 +128,7 @@ async function getComponent({ pipeline, path, getDataFromCID, returnCID = false 
 
   // Iterate through the path elements starting from the second element
   for (let i = 1; i < elems.length; i++) {
+    console.log(`looping, i is ${i}`);
 
       if ( !path ) { return null };
 

@@ -34,6 +34,7 @@ async function makeDataObject ( {dataInfo, baseObject, increment, branch, previo
         time_created: Date.now(),
         file_size: 0,
         type: "application/octet-stream",
+        schema: null,
         preview: "",
         preview_size: 0,
         preview_type: "application/octet-stream",
@@ -83,10 +84,8 @@ async function makeDataObject ( {dataInfo, baseObject, increment, branch, previo
 
     // Store the dataObject if store is true
     if (store){
-        console.log('Storing the data object');
         try{
             finalCID = await nodeParams.storeDataGetCID(toReturnString, 'application/json');
-            console.log(`For storing data object ${toReturn.name}, got CID ${finalCID}`);
         } catch (error) {
             console.error("Error storing data object:", error);
             throw error;
