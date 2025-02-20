@@ -34,7 +34,7 @@ async function makeDataObject ( {dataInfo, baseObject, increment, branch, previo
         time_created: Date.now(),
         file_size: 0,
         type: "application/octet-stream",
-        schema: null,
+        schema: {},
         preview: "",
         preview_size: 0,
         preview_type: "application/octet-stream",
